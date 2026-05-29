@@ -75,12 +75,18 @@ export class Audit {
   }
 
   static buildForDbRow(row: AuditRow): Audit {
+    const report =
+      typeof row.report_json === 'string'
+        ? (JSON.parse(row.report_json) as LHR)
+        : row.report_json || undefined;
     return Audit.build({
       id: row.id,
       url: row.url,
-      timeCreated: row.time_created,
-      timeCompleted: row.time_completed || undefined,
-      report: row.report_json || undefined,
+      timeCreated: new Date(row.time_created),
+      timeCompleted: row.time_completed
+        ? new Date(row.time_completed)
+        : undefined,
+      report,
     });
   }
 

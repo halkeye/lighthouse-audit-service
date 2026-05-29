@@ -22,8 +22,13 @@ import { NotFoundError } from '../../errors';
 
 export interface WebsiteRow {
   url: string;
-  time_last_created: Date;
+  time_last_created: Date | string;
   audits_json: string[];
+}
+
+interface WebsiteSummaryRow {
+  url: string;
+  time_last_created: Date | string;
 }
 
 export async function retrieveWebsiteByUrl(
@@ -56,14 +61,8 @@ export async function retrieveWebsiteList(
 ): Promise<Website[]> {
   let query = SQL`
     SELECT
-      distinct url,
-      MAX(time_created) as time_last_created,
-      array(
-        SELECT to_json(n.*)::text
-        FROM lighthouse_audits n
-        WHERE n.url = o.url
-        ORDER BY time_created DESC
-      ) as audits_json
+      url,
+      MAX(time_created) as time_last_created
     FROM lighthouse_audits o
   `;
   if (options.where) {
@@ -73,14 +72,32 @@ export async function retrieveWebsiteList(
   query = query.append(SQL`\nGROUP BY url`);
   query = query.append(SQL`\nORDER BY time_last_created DESC`);
   query = addListRequestToQuery(query, options);
-  const queryResult = await conn.query<WebsiteRow>(query);
-  return queryResult.rows.map(Website.buildForDbRow);
+  const queryResult = await conn.query<WebsiteSummaryRow>(query);
+
+  const websites = await Promise.all(
+    queryResult.rows.map(async summary => {
+      const audits = await conn.query<Record<string, unknown>>(SQL`
+        SELECT *
+        FROM lighthouse_audits
+        WHERE url = ${summary.url}
+        ORDER BY time_created DESC
+      `);
+      const websiteRow: WebsiteRow = {
+        url: summary.url,
+        time_last_created: summary.time_last_created,
+        audits_json: audits.rows.map(audit => JSON.stringify(audit)),
+      };
+      return Website.buildForDbRow(websiteRow);
+    }),
+  );
+
+  return websites;
 }
 
 export async function retrieveWebsiteTotal(
   conn: DbConnectionType,
 ): Promise<number> {
-  const res = await conn.query<{ total_count: string }>(
+  const res = await conn.query<{ total_count: string | number }>(
     SQL`SELECT COUNT(distinct url) as total_count FROM lighthouse_audits`,
   );
   return +res.rows[0].total_count;

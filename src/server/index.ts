@@ -26,10 +26,15 @@ import bodyParser from 'body-parser';
 import expressPromiseRouter from 'express-promise-router';
 import morgan from 'morgan';
 import { Server } from 'http';
-import { Pool, ConnectionConfig } from 'pg';
 
 import logger from '../logger';
-import { runDbMigrations, awaitDbConnection, DbConnectionType } from '../db';
+import {
+  runDbMigrations,
+  awaitDbConnection,
+  DbConnectionType,
+  DbConfig,
+  createDbConnection,
+} from '../db';
 import { bindRoutes as bindAuditRoutes } from '../api/audits/routes';
 import { bindRoutes as bindWebsiteRoutes } from '../api/websites/routes';
 import { StatusCodeError } from '../errors';
@@ -39,7 +44,9 @@ const DEFAULT_PORT = 3003;
 export interface LighthouseAuditServiceOptions {
   port?: number;
   cors?: boolean;
-  postgresConfig?: ConnectionConfig;
+  dbConfig?: DbConfig;
+  /** @deprecated prefer dbConfig */
+  postgresConfig?: DbConfig['connection'];
 }
 
 function configureMiddleware(
@@ -84,7 +91,12 @@ export async function getApp(
   providedConn?: DbConnectionType,
 ): Promise<Application> {
   logger.info('building express app...');
-  const conn = providedConn || new Pool(options.postgresConfig);
+  const conn =
+    providedConn ||
+    createDbConnection({
+      client: options.dbConfig?.client || 'pg',
+      connection: options.dbConfig?.connection || options.postgresConfig,
+    });
 
   await awaitDbConnection(conn);
   await runDbMigrations(conn);
@@ -107,7 +119,12 @@ export async function startServer(
   providedConn?: DbConnectionType,
 ): Promise<Server> {
   const { port = DEFAULT_PORT } = options;
-  const conn = providedConn || new Pool(options.postgresConfig);
+  const conn =
+    providedConn ||
+    createDbConnection({
+      client: options.dbConfig?.client || 'pg',
+      connection: options.dbConfig?.connection || options.postgresConfig,
+    });
   const app = await getApp(options, conn);
 
   logger.debug('starting application server...');
