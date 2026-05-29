@@ -27,7 +27,7 @@ export interface DbQueryResult<Row = Record<string, unknown>> {
 }
 
 export interface DbConnectionType {
-  readonly client?: string;
+  readonly client?: DbClient;
   query<Row = Record<string, unknown>>(
     query: string | SQLStatement,
   ): Promise<DbQueryResult<Row>>;
@@ -39,10 +39,10 @@ export type DbConfig = Pick<Knex.Config, 'client' | 'connection'>;
 
 function extractQuery(query: string | SQLStatement): {
   text: string;
-  values: unknown[];
+  values: Knex.RawBinding[];
 } {
   if (typeof query === 'string') return { text: query, values: [] };
-  return { text: query.sql, values: query.values };
+  return { text: query.sql, values: query.values as Knex.RawBinding[] };
 }
 
 function getQueryResultRows<Row>(rawResult: unknown): Row[] {
@@ -108,11 +108,38 @@ function getDefaultDbClient(): DbClient {
   return (process.env.LAS_DB_CLIENT as DbClient) || 'pg';
 }
 
+function getDefaultConnection(client: DbClient): Knex.Config['connection'] {
+  if (client === 'pg' || client === 'postgres' || client === 'postgresql') {
+    return {
+      host: process.env.PGHOST,
+      user: process.env.PGUSER,
+      password: process.env.PGPASSWORD,
+      database: process.env.PGDATABASE,
+      port: process.env.PGPORT ? Number(process.env.PGPORT) : undefined,
+    };
+  }
+  if (client === 'mysql' || client === 'mysql2') {
+    return {
+      host: process.env.MYSQL_HOST,
+      user: process.env.MYSQL_USER,
+      password: process.env.MYSQL_PASSWORD,
+      database: process.env.MYSQL_DATABASE,
+      port: process.env.MYSQL_PORT ? Number(process.env.MYSQL_PORT) : undefined,
+    };
+  }
+  if (client === 'sqlite3' || client === 'better-sqlite3') {
+    return {
+      filename: process.env.SQLITE_FILENAME || ':memory:',
+    };
+  }
+  return undefined;
+}
+
 export function createDbConnection(config: DbConfig = {}): DbConnectionType {
   const client = config.client || getDefaultDbClient();
   const db = knex({
     client,
-    connection: config.connection,
+    connection: config.connection || getDefaultConnection(client),
   });
 
   return {
