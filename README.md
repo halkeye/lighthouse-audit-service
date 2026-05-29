@@ -15,11 +15,12 @@ The simplest way to deploy the app is with [our image on Docker Hub](https://hub
 docker run spotify/lighthouse-audit-service:latest
 ```
 
-Be sure to see "Configuring Postgres" - you will likely need to configure the Postgres credentials, even when trying the app out locally. A list of supported environment variables:
+Be sure to see "Configuring the database" - you will likely need to configure the database credentials, even when trying the app out locally. A list of supported environment variables:
 
 - `LAS_PORT`: which port to run the service on
 - `LAS_CORS`: if true, enables the [cors express middleware](https://expressjs.com/en/resources/middleware/cors.html).
-- all [environment variables from pg](https://node-postgres.com/features/connecting#Environment%20variables), which should be used to set credentials for accessing the db.
+- `LAS_DB_CLIENT` (optional): database client to use. Defaults to `pg`.
+- all [environment variables from pg](https://node-postgres.com/features/connecting#Environment%20variables), when using the default Postgres client.
 
 #### With Docker Compose
 
@@ -30,14 +31,13 @@ A simple way to trial this tool is with the following docker compose file which 
 version: '3.1'
 
 services:
-
   db:
     image: postgres:latest
     restart: always
     environment:
       POSTGRES_USER: dbuser
       POSTGRES_PASSWORD: example
-  
+
   lighthouse:
     image: spotify/lighthouse-audit-service:latest
     environment:
@@ -46,9 +46,8 @@ services:
       PGPASSWORD: example
       LAS_PORT: 4008
     ports:
-      - "4008:4008"
+      - '4008:4008'
 ```
-
 
 ### As an npm package
 
@@ -66,11 +65,13 @@ import { startServer } from '@spotify/lighthouse-audit-service';
 startServer({
   port: 8080,
   cors: true,
-  postgresConfig: {
-    db: 'postgres',
-    database: 'mydb',
-    password: 'secretpassword',
-    port: 3211,
+  dbConfig: {
+    client: 'pg',
+    connection: {
+      database: 'mydb',
+      password: 'secretpassword',
+      port: 3211,
+    },
   },
 });
 ```
@@ -104,11 +105,11 @@ async function startup() {
 startup();
 ```
 
-### Configuring Postgres
+### Configuring the database
 
-You will need a Postgres database for lighthouse-audit-service to use to manage the stored audits. The database will be configured on app startup, so you need only initialize an empty database and provide credentials to lighthouse-audit-service.
+You will need a SQL database for lighthouse-audit-service to use to manage the stored audits. The database will be configured on app startup, so you need only initialize an empty database and provide credentials to lighthouse-audit-service.
 
-You can set the Postgres credentials up either by setting [environment variables, which will be interpreted by pg](https://node-postgres.com/features/connecting#Environment%20variables):
+By default, lighthouse-audit-service uses Postgres (`pg`). You can set the Postgres credentials up either by setting [environment variables, which will be interpreted by pg](https://node-postgres.com/features/connecting#Environment%20variables):
 
 ```sh
 PGUSER=dbuser \
@@ -118,7 +119,7 @@ PGDATABASE=mydb \
 PGPORT=3211 yarn start
 ```
 
-..or, by [passing the config in programmatically](https://node-postgres.com/features/connecting#Programmatic) as `postgresConfig`:
+..or, by passing DB config in programmatically as `dbConfig`:
 
 ```js
 import { startServer } from '@spotify/lighthouse-audit-service';
@@ -126,21 +127,26 @@ import { startServer } from '@spotify/lighthouse-audit-service';
 startServer({
   port: 8080,
   cors: true,
-  postgresConfig: {
-    database: 'mydb',
-    host: 'my.db.host',
-    user: 'dbuser',
-    password: 'secretpassword',
-    port: 3211,
+  dbConfig: {
+    client: 'pg',
+    connection: {
+      database: 'mydb',
+      host: 'my.db.host',
+      user: 'dbuser',
+      password: 'secretpassword',
+      port: 3211,
+    },
   },
 });
 ```
 
-Both `startServer` and `getApp` support this. Further, both of these methods support optionally passing a [pg client](https://node-postgres.com/) as an optional second argument.
+Both `startServer` and `getApp` support this. `postgresConfig` is still supported for backwards compatibility.
+
+Further, both of these methods support optionally passing a custom DB connection as an optional second argument.
 
 ```js
-import { Pool } from 'pg';
-const conn = new Pool();
+import { createDbConnection } from '@spotify/lighthouse-audit-service';
+const conn = createDbConnection();
 startServer({}, conn);
 ```
 
