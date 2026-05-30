@@ -57,6 +57,7 @@
     "cors": "^2.8.5",
     "express": "^4.17.3",
     "express-promise-router": "^4.1.1",
+    "knex": "^3.2.10",
     "lighthouse": "^9.5.0",
     "morgan": "^1.10.0",
     "node-fetch": "^2.6.1",

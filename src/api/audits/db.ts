@@ -24,15 +24,31 @@ import { ListRequest, addListRequestToQuery } from '../listHelpers';
 export interface AuditRow {
   id: string;
   url: string;
-  time_created: Date;
-  time_completed: Date | null;
-  report_json: LHR | null;
+  time_created: Date | string;
+  time_completed: Date | string | null;
+  report_json: LHR | string | null;
+}
+
+function normalizeAuditRow(row: AuditRow): AuditRow {
+  return {
+    ...row,
+    time_created: new Date(row.time_created),
+    time_completed: row.time_completed ? new Date(row.time_completed) : null,
+    report_json:
+      typeof row.report_json === 'string'
+        ? JSON.parse(row.report_json)
+        : row.report_json,
+  };
 }
 
 export async function persistAudit(
   conn: DbConnectionType,
   audit: Audit,
 ): Promise<void> {
+  await conn.query(SQL`
+    DELETE FROM lighthouse_audits
+    WHERE id = ${audit.id};
+  `);
   await conn.query(SQL`
     INSERT INTO lighthouse_audits (id, url, time_created, time_completed, report_json)
     VALUES (
@@ -41,15 +57,7 @@ export async function persistAudit(
       ${audit.timeCreated.toISOString()},
       ${audit.timeCompleted ? audit.timeCompleted.toISOString() : null},
       ${audit.reportJson || null}
-    )
-    ON CONFLICT (id)
-      DO UPDATE SET (url, time_created, time_completed, report_json) = (
-        ${audit.url},
-        ${audit.timeCreated.toISOString()},
-        ${audit.timeCompleted ? audit.timeCompleted.toISOString() : null},
-        ${audit.reportJson || null}
-      )
-      WHERE lighthouse_audits.id = ${audit.id};
+    );
   `);
 }
 
@@ -65,13 +73,13 @@ export async function retrieveAuditList(
   query = query.append(SQL`\nORDER BY time_created DESC`);
   query = addListRequestToQuery(query, options);
   const res = await conn.query<AuditRow>(query);
-  return res.rows.map(Audit.buildForDbRow);
+  return res.rows.map(normalizeAuditRow).map(Audit.buildForDbRow);
 }
 
 export async function retrieveAuditCount(
   conn: DbConnectionType,
 ): Promise<number> {
-  const res = await conn.query<{ total_count: string }>(
+  const res = await conn.query<{ total_count: string | number }>(
     SQL`SELECT COUNT(*) as total_count FROM lighthouse_audits`,
   );
   return +res.rows[0].total_count;
@@ -93,12 +101,12 @@ export async function deleteAuditById(
   conn: DbConnectionType,
   auditId: string,
 ): Promise<Audit> {
+  const existing = await retrieveAuditById(conn, auditId);
   const res = await conn.query<AuditRow>(SQL`
     DELETE FROM lighthouse_audits
-      WHERE lighthouse_audits.id = ${auditId}
-    RETURNING *;
+      WHERE lighthouse_audits.id = ${auditId};
   `);
-  if (res.rowCount === 0)
+  if (res.rowCount === 0 && res.rows.length === 0)
     throw new NotFoundError(`audit not found for id "${auditId}"`);
-  return Audit.buildForDbRow(res.rows[0]);
+  return existing;
 }
